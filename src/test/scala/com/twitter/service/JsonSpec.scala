@@ -44,6 +44,19 @@ object JsonSpec extends Specification {
         //Json.parse("""["A^?B"]""") mustEqual List("A^?B")
         Json.parse("[\"A\u007fB\"]") mustEqual List("A\u007fB")
       }
+      
+      "handle long inputs" in {
+        val s = new StringBuilder()
+        for(i <- 0.until(2000)) { s.append("F\"") }
+        for(i <- 0.until(2000)) { s.append("U\\") }
+        try {
+          Json.parse(Json.build(List(s.toString)).toString)
+        } catch {
+          case e : Exception =>
+            fail("An exception was thrown")
+        }
+        
+      }
     }
 
     "parse maps" in {
