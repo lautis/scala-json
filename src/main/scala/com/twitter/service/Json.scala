@@ -5,6 +5,8 @@ import net.lag.extensions._
 import scala.collection.Map
 import scala.collection.immutable.EmptyMap
 import scala.util.parsing.combinator._
+import scala.util.parsing.combinator.syntactical._
+import scala.util.parsing.combinator.lexical._
 
 
 trait JsonSerializable {
@@ -18,9 +20,15 @@ class JsonException(reason: String) extends Exception(reason)
 
 
 /**
- * Stolen (awesomely) from the scala book and fixed by making string quotation explicit.
+ *  Stolen from the scala library and changed return types.
  */
-private class JsonParser extends JavaTokenParsers {
+private class JsonParser extends StdTokenParsers with ImplicitConversions {
+  type Tokens = scala.util.parsing.json.Lexer
+  val lexical = new Tokens
+
+  lexical.reserved ++= List("true", "false", "null")
+  lexical.delimiters ++= List("{", "}", "[", "]", ":", ",")
+
   def obj: Parser[Map[String, Any]] = "{" ~> repsep(member, ",") <~ "}" ^^ (new EmptyMap ++ _)
 
   def arr: Parser[List[Any]] = "[" ~> repsep(value, ",") <~ "]"
@@ -29,23 +37,25 @@ private class JsonParser extends JavaTokenParsers {
     case name ~ ":" ~ value => (name, value)
   }
 
-  def number: Parser[Any] = floatingPointNumber ^^ { num =>
-    val rv = num.toLong
-    if (rv >= Math.MIN_INT && rv <= Math.MAX_INT) rv.toInt else rv
-  }
-
-  def string: Parser[String] =
-    "\"" ~> """([^\"[\x00-\x1F]\\]+|\\[\\/bfnrt"]|\\u[a-fA-F0-9]{4})*""".r <~ "\"" ^^
-      { _.replace("""\/""", "/").unquoteC }
+  def string : Parser[String] = accept("string", { case lexical.StringLit(n) => n})
+  def number : Parser[Any] = accept("number", { case lexical.NumericLit(n) => format(n)})
 
   def value: Parser[Any] = obj | arr | string | number |
     "null" ^^ (x => null) | "true" ^^ (x => true) | "false" ^^ (x => false)
-
-  def parse(s: String) = {
-    parseAll(value, s) match {
+   
+  def parse(s : String) = {
+    phrase(value)(new lexical.Scanner(s)) match {
       case Success(result, _) => result
       case x @ Failure(msg, z) => throw new JsonException(x.toString)
       case x @ Error(msg, _) => throw new JsonException(x.toString)
+    }
+  }
+   
+  private def format(num : String) : Any = {
+    if(num.indexOf(".") > 0) num.toDouble
+    else {
+      val rv = num.toLong
+      if (rv >= Math.MIN_INT && rv <= Math.MAX_INT) rv.toInt else rv
     }
   }
 }
